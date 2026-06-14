@@ -14,6 +14,9 @@ ble_buffer = bytearray()
 
 x, y = 0.0, 0.0
 coordinates = []
+temperature = []
+gas_level = []
+humidity = []
 
 robot_disconnected = False
 
@@ -38,26 +41,37 @@ def notification_handler(sender, data):
 
 
 async def data_processor():
+    global x, y, coordinates
+
     while True:
         text = await data_queue.get()
-        parts = text.split(';')
-        
-        global coordinates
-        global x, y
-        
-        try: 
-            ticks_L = float(parts[0])
-            ticks_R = float(parts[1])
-            theta = float(parts[2])
-            
-            d_center = (ticks_L + ticks_R) / 2  # просто тики, без перевода
 
-            x += d_center * cos(radians(theta))
-            y += d_center * sin(radians(theta))
-            coordinates.append((x, y))
-            print(coordinates[-1])
-        except ValueError:
-            print(text)
+        if 'S' in text:  # ← пакет сенсоров
+            try:
+                parts = text.split('S')
+                gas  = float(parts[0])
+                temp = float(parts[1])
+                hum  = float(parts[2])
+                gas_level.append(gas)
+                temperature.append(temp)
+                humidity.append(hum)
+            except (ValueError, IndexError):
+                print(f"[сенсор]: {text}")
+
+        elif ';' in text:  # ← пакет координат
+            try:
+                parts = text.split(';')
+                ticks_L = float(parts[0])
+                ticks_R = float(parts[1])
+                theta   = float(parts[2])
+
+                d_center = (ticks_L + ticks_R) / 2
+                y += d_center * cos(radians(-theta)) / 10
+                x += d_center * sin(radians(-theta)) / 10
+                coordinates.append((x, y))
+                print(coordinates[-1])
+            except (ValueError, IndexError):
+                print(f"[служебное]: {text}")
             
 
 
@@ -117,11 +131,20 @@ async def main():
             print("Успешно подключено!")
             await client.start_notify(UART_RX_CHAR_UUID, notification_handler)
             
-            # ✅ Все три задачи работают ПАРАЛЛЕЛЬНО
-            await asyncio.gather(
-                listen_for_enter(client),
-                data_processor(),
-            )
+            tasks = [
+                asyncio.create_task(listen_for_enter(client)),
+                asyncio.create_task(data_processor()),
+            ]
+            
+            # Ждём пока listen_for_enter не выйдет (после отключения робота)
+            await tasks[0]
+            
+            # Отменяем data_processor
+            tasks[1].cancel()
+            try:
+                await tasks[1]
+            except asyncio.CancelledError:
+                pass
 
 
 if __name__ == "__main__":
@@ -133,4 +156,7 @@ if __name__ == "__main__":
         print("\nПрограмма остановлена.")
     finally:
         loop.close()      # закрываем loop
-        draw_map()    # рисуем карту уже вне asyncio
+        draw_map()        # рисуем карту уже вне asyncio
+        print("Temerature: ", temperature)
+        print("Humidity: ", humidity)
+        print("Gas level: ", gas_level)

@@ -19,8 +19,8 @@ float error_count_L = 0;
 float error_count_R = 0;
 int loop_count = 0;
 
-int normal_right_distance = 11; //нормальна дистанція до правої стіни
-int safe_distance = 10; //дистанція знаходження передньої стіни
+int normal_right_distance = 7; //нормальна дистанція до правої стіни
+int safe_distance = 12; //дистанція знаходження передньої стіни
 
 bool isRunning = false; 
 
@@ -123,6 +123,17 @@ void setup() {
   Serial3.begin(115200); 
   gyro.begin();
   delay(1000); // ініціалізація гіроскопа
+
+  // На Arduino — замеряем drift перед стартом
+  float gyro_offset = 0;
+  for(int i = 0; i < 100; i++) {
+      gyro_offset += gyro.getAngleZ();
+      delay(10);
+  }
+  gyro_offset /= 100;
+
+// И вычитаем при каждом чтении
+float theta = gyro.getAngleZ() - gyro_offset;
 
   // Прив'язка переривань для енкодерів
   attachInterrupt(encoderLeft.getIntNum(),  isr_encoder_left,  RISING);
